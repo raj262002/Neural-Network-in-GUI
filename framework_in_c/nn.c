@@ -59,10 +59,11 @@ int main()
 #else
         nn_backprop(nn, g, ti, to);
 #endif
-        // NN_PRINT(g);
         nn_learn(nn, g, rate);
         printf("%zu: cost = %f\n", i, nn_cost(nn, ti, to));
     }
+        
+    NN_PRINT(nn);
 
    for(size_t i = 0; i < 2; ++i){
         for (size_t j = 0; j < 2; j++){
