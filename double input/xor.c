@@ -156,6 +156,60 @@ Xor finite_diff(Xor m)
     return g;
 }
 
+#define IMG_WIDTH 800
+#define IMG_HEIGHT 600
+
+uint32_t img_pixels[IMG_WIDTH*IMG_HEIGHT];
+
+void nn_render(Olivec_Canvas img, NN nn){
+    uint32_t low_color = 0x00FF00FF;
+    uint32_t high_color = 0x0000FF00;
+    
+    uint32_t background_color = 0xFF181818;
+
+    olivec_fill(img, background_color);
+
+    int neuron_radius = 25;
+    int layer_border_hpad = 50;
+    int layer_border_vpad = 50;
+    int nn_width = img.width - 2*layer_border_hpad;
+    int nn_height = img.height - 2*layer_border_vpad;
+    int nn_x = img.width/2 - nn_width/2;
+    int nn_y = img.height/2 - nn_height/2;
+    size_t arch_count = nn.count + 1;
+    int layer_hpad = nn_width / arch_count;
+
+    for(size_t l = 0; l < arch_count; ++l){
+        int layer_vpad1 = nn_height/nn.as[l].cols;
+        for(size_t i = 0; i < nn.as[l].cols; ++i) {
+            int cx1 = nn_x + l*layer_hpad + layer_hpad/2;
+            int cy1 = nn_y + i*layer_vpad1 + layer_vpad1/2;
+            if(l+1 < arch_count){
+                int layer_vpad2 = nn_height / nn.as[l+1].cols;
+                for(size_t j = 0; j < nn.as[l+1].cols; ++j){
+                    int cx2 = nn_x + (l+1)*layer_hpad + layer_hpad/2;
+                    int cy2 = nn_y + j*layer_vpad2 + layer_vpad2/2;
+                    uint32_t connection_color = 0xFF000000|low_color;
+                    uint32_t alpha = floorf(255.f*sigmoidf(MAT_AT(nn.ws[l], i, j)));
+                    olivec_blend_color(&connection_color, alpha<<(8*3)|high_color) ;
+                    olivec_line(img, cx1, cy1, cx2, cy2, connection_color);
+                }
+            }
+            if(l == 0){
+            uint32_t neuron_color = 0xFFAAAAAA;
+            olivec_circle(img, cx1, cy1, neuron_radius, neuron_color);
+            }
+            if(l > 0){
+                uint32_t neuron_color = 0xFF000000|low_color;
+                uint32_t alpha = floorf(255.f*sigmoidf(MAT_AT(nn.bs[l-1], 0, i)));
+                olivec_blend_color(&neuron_color, alpha<<(8*3)|high_color) ;
+                olivec_circle(img, cx1, cy1, neuron_radius, neuron_color);
+            }
+        }
+    }
+}
+
+
 int main()
 {
     float rate = 1e-1;
