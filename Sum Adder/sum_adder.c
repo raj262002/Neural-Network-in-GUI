@@ -11,7 +11,6 @@
 #include "../devdep/stb_image_write.h"
 
 #define BITS 4
-
 #define IMG_FACTOR 80
 #define IMG_WIDTH (16*IMG_FACTOR)
 #define IMG_HEIGHT (9*IMG_FACTOR)
