@@ -5,6 +5,8 @@
 #include "../framework_in_c/nn.h"
 #include<stdio.h>
 #include<assert.h>
+#include<limits.h>
+#include<float.h>
 #include "../software/header/raylib.h"
 #define SV_IMPLEMENTATION
 #include "sv.h"
@@ -15,6 +17,12 @@
 #define IMG_HEIGHT (9*IMG_FACTOR)
 
 #define DA_INIT_CAP 256
+
+typedef struct {
+    size_t *items;
+    size_t count;
+    size_t capacity;
+} Cost_Plot;
 
 typedef struct {
     size_t *items;
@@ -41,21 +49,19 @@ char *args_shift(int *argc, char ***argv) {
     return result;
 }
 
-void nn_render_raylib(NN nn) {
-    Color background_color = {0x18, 0x18, 0x18, 0xFF};
+void nn_render_raylib(NN nn, int rx, int ry, int rw, int rh) {
     Color low_color = {0xFF, 0x00, 0xFF, 0xFF};
     Color high_color = {0x00, 0xFF, 0x00, 0xFF};
 
-    ClearBackground(background_color);
     // olivec_fill(img, background_color);
 
-    int neuron_radius = 25;
+    float neuron_radius = rh*0.04;
     int layer_border_hpad = 50;
     int layer_border_vpad = 50;
-    int nn_width = IMG_WIDTH - 2*layer_border_hpad;
-    int nn_height = IMG_HEIGHT - 2*layer_border_vpad;
-    int nn_x = IMG_WIDTH/2 - nn_width/2;
-    int nn_y = IMG_HEIGHT/2 - nn_height/2;
+    int nn_width = rw - 2*layer_border_hpad;
+    int nn_height = rh - 2*layer_border_vpad;
+    int nn_x = rx + rw/2 - nn_width/2;
+    int nn_y = ry + rh/2 - nn_height/2;
     size_t arch_count = nn.count + 1;
     int layer_hpad = nn_width / arch_count;
 
@@ -73,7 +79,7 @@ void nn_render_raylib(NN nn) {
                     float value = sigmoidf(MAT_AT(nn.ws[l], j, i));
                     high_color.a = floorf(255.f*sigmoidf(MAT_AT(nn.ws[l], i, j)));
                     ColorAlphaBlend(low_color, high_color, WHITE);
-                    float thick = 1.0f;
+                    float thick = rh*0.004f;
                     Vector2 start = {cx1, cy1};
                     Vector2 end   = {cx2, cy2};
                     DrawLineEx(start, end, thick, ColorAlphaBlend(low_color, high_color, WHITE));
@@ -87,6 +93,27 @@ void nn_render_raylib(NN nn) {
                 DrawCircle(cx1, cy1, neuron_radius, GRAY);
             }
         }
+    }
+}
+
+void cost_plot_minmax(Cost_Plot plot, float *min, float *max) {
+    *min = FLT_MAX;
+    *max = FLT_MIN;
+    for(size_t i = 0; i < plot.count; ++i) {
+        if(*max < plot.items[i]) *max = plot.items[i];
+        if(*min > plot.items[i]) *min = plot.items[i];
+    }
+}
+
+void plot_cost(Cost_Plot plot, int rx, int ry, int rw, int rh) {
+    float min, max;
+    cost_plot_minmax(plot, &min, &max);
+    for(size_t i = 0; i + 1 < plot.count; ++i) {
+        float x1 = rx + (float)rw/plot.count*i;
+        float y1 = ry + (1 - (plot.items[i] - min)/(max - min))*rh;
+        float x2 = rx + (float)rw/plot.count*(i + 1);
+        float y2 = ry + (1 - (plot.items[i + 1] - min)/(max - min))*rh;
+        DrawLineEx( (Vector2){x1, y1}, (Vector2){x2, y2}, rh*0.005, RED);
     }
 }
 
@@ -162,22 +189,48 @@ int main(int argc, char **argv)
     NN g = nn_alloc(arch.items, arch.count);
     nn_rand(nn, 0, 1);
 
-    float rate = 1;
+    float rate = 0.5;
 
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(IMG_WIDTH, IMG_HEIGHT, "gym");
     SetTargetFPS(60);
 
+    Cost_Plot plot = {0};
+
     size_t i = 0;
+    size_t max_epoch = 5000;
     while(!WindowShouldClose()){
-        if(i < 5000) {
+        if(i < max_epoch) {
             nn_backprop(nn, g, ti, to);
             nn_learn(nn, g, rate);
             i += 1;
-            printf("%zu: c = %f\n", i, nn_cost(nn, ti, to));
+            da_append(&plot, nn_cost(nn, ti, to));
+            // printf("%zu: c = %f\n", i, nn_cost(nn, ti, to));
         }
         
         BeginDrawing();
-        nn_render_raylib(nn);
+        Color background_color = {0x18, 0x18, 0x18, 0xFF};
+        ClearBackground(background_color);
+        {
+            int rw, rh, rx, ry;
+            int w = GetRenderWidth();
+            int h = GetRenderHeight();
+
+            rw = w/2;
+            rh = h*2/3;
+            rx = 0;
+            ry = h/2 - rh/2;
+            plot_cost(plot, rx, ry, rw, rh);
+
+            rw = w/2;
+            rh = h*2/3;
+            rx = w - rw;
+            ry = h/2 - rh/2;
+            nn_render_raylib(nn, rx, ry, rw, rh);
+            const buffer[256];
+            snprintf(buffer, sizeof(buffer), "Epoch : %zu/%zu, Rate: %f", i, max_epoch, rate);
+            DrawText(buffer, 0, 0, h*0.04, WHITE);
+        }
         EndDrawing();
     }
 
