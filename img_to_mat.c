@@ -1,26 +1,21 @@
-// Gym is a GUI app that trains your NN on the data you give it.
-// The idea is that it will spit out a binary file that can be then loaded up with nn.h and used in your application
-
-#define NN_IMPLEMENTATION
-#include "../framework_in_c/nn.h"
 #include<stdio.h>
 #include<assert.h>
-#include<limits.h>
 #include<float.h>
-#include "../software/header/raylib.h"
-#define SV_IMPLEMENTATION
-#include "sv.h"
+#include ".\software\header\raylib.h"
 
-//size of window
-#define IMG_FACTOR 80
-#define IMG_WIDTH (16*IMG_FACTOR)
-#define IMG_HEIGHT (9*IMG_FACTOR)
+#include "stb_image.h"
+#include "stb_image_write.h"
 
-typedef struct {
-    size_t *items;
-    size_t count;
-    size_t capacity;
-} Arch;
+#define NN_IMPLEMENTATION
+#include "./framework_in_c/nn.h"
+
+char *args_shift(int *argc, char ***argv) {
+    assert(*argc > 0);
+    char *result = **argv;
+    (*argc) -= 1;
+    (*argv) += 1;
+    return result;
+} //argument shifting function given by command line
 
 typedef struct {
     size_t *items;
@@ -39,15 +34,6 @@ do {                         \
     } \
     (da)->items[(da)->count++] = item; \
 } while (0)     
-
-char *args_shift(int *argc, char ***argv) {
-    assert(*argc > 0);
-    // (*argc)--;
-    char *result = **argv;
-    (*argc) -= 1;
-    (*argv) += 1;
-    return result;
-}
 
 void nn_render_raylib(NN nn, int rx, int ry, int rw, int rh) {
     Color low_color = {0xFF, 0x00, 0xFF, 0xFF};
@@ -105,7 +91,6 @@ void cost_plot_minmax(Cost_Plot plot, float *min, float *max) {
     }
 }
 
-
 void plot_cost(Cost_Plot plot, int rx, int ry, int rw, int rh) {
     float min, max;
     cost_plot_minmax(plot, &min, &max);
@@ -120,77 +105,66 @@ void plot_cost(Cost_Plot plot, int rx, int ry, int rw, int rh) {
 
 int main(int argc, char **argv) 
 {
-    // printf("hello fucking world!");
-    const char *program = args_shift(&argc, &argv);
+    const char * program = args_shift(&argc, &argv);
 
     if(argc <= 0) {
-        fprintf(stderr, "Usage: %s <model.arch> <model.mat>\n", program);
-        fprintf(stderr, "ERROR: no architecture file was provided\n");
-        // printf("hello architecture");
-        return 1;
-    }
-    const char *arch_file_path = args_shift(&argc, &argv);
-
-    if(argc <= 0) {
-        fprintf(stderr, "Usage: %s <model.arch> <model.mat>\n", program);
-        fprintf(stderr, "ERROR: no data file was provided\n");
-        // printf("hello data file");
-        return 1;
-    }
-    const char *data_file_path = args_shift(&argc, &argv);
-
-    unsigned int buffer_len = 0;
-    unsigned char *buffer = LoadFileData(arch_file_path, &buffer_len);    //Load file data as buffer array
-    if(buffer == NULL) {
+        fprintf(stderr, "Usage: %s <input> \n", program);
+        fprintf(stderr, "ERROR: no input file is provided\n");
         return 1;
     }
 
-    String_View content = sv_from_parts((const char*)buffer, buffer_len);
+    const char *img_file_path = args_shift(&argc, &argv);
 
-    Arch arch = {0};
+    int img_width, img_height, img_comp;
+    uint8_t *img_pixels = stbi_load(img_file_path, &img_width, &img_height, &img_comp, 0);
 
-    printf("------------------------\n");
-    content = sv_trim_left(content);
-    while (content.count > 0 && isdigit(content.data[0])) {
-        size_t x = sv_chop_u64(&content);
-        da_append(&arch, x);
-        content = sv_trim_left(content);
-    }
-    printf("------------------------\n");
-
-    FILE *in = fopen(data_file_path, "rb");
-    if(in == NULL) {
-        fprintf(stderr, "ERROR: could not read file %s\n", data_file_path);
+    if(img_pixels == NULL) {
+        fprintf(stderr, "ERROR: could not read image %s\n", img_file_path);
         return 1;
     }
-    Mat t = mat_load(in);
-    fclose(in);
+    if(img_comp != 1) {
+        fprintf(stderr, "%s is %d bits image. Only 8 bit grayscale images are supported\n", img_file_path, img_comp*8);
+        return 1;
+    }
+    printf("%s size %dx%d %d bits\n", img_file_path, img_width, img_height, img_comp*8);
 
-    //TODO : can we have NN with just input?
-    NN_ASSERT(arch.count > 1);
-    size_t ins_sz = arch.items[0];
-    size_t outs_sz = arch.items[arch.count - 1];
-    NN_ASSERT(t.cols == ins_sz + outs_sz);
+    Mat t = mat_alloc(img_width*img_height, 3);
+
+    for(int y = 0; y < img_height; ++y) {
+        for(int x = 0; x < img_width; ++x) {
+            size_t i = y*img_width + x;
+            MAT_AT(t, i, 0) = (float)x/(img_width - 1);
+            MAT_AT(t, i, 1) = (float)y/(img_height - 1);
+            MAT_AT(t, i, 2) = img_pixels[i]/255.f;
+        }
+    }
+    
+    // MAT_PRINT(t);
 
     Mat ti = {
         .rows = t.rows,
-        .cols = ins_sz,
+        .cols = 2,
         .stride = t.stride,
-        .es = &MAT_AT(t,0,0),
-   };
-
+        .es = &MAT_AT(t, 0, 0)
+    };
     Mat to = {
         .rows = t.rows,
-        .cols = outs_sz,
+        .cols = 1,
         .stride = t.stride,
-        .es = &MAT_AT(t, 0, ins_sz),
+        .es = &MAT_AT(t, 0, ti.cols)
     };
 
-    NN nn = nn_alloc(arch.items, arch.count);
-    NN g = nn_alloc(arch.items, arch.count);
-    nn_rand(nn, 0, 1);
+    // MAT_PRINT(ti);
+    // MAT_PRINT(to);
 
-    float rate = 0.5;
+    size_t arch[] = {2, 7, 4, 1};
+    NN nn = nn_alloc(arch, ARRAY_LENS(arch));
+    NN g = nn_alloc(arch, ARRAY_LENS(arch));
+    nn_rand(nn, -1, 1);
+
+    size_t IMG_FACTOR = 80;
+    size_t IMG_WIDTH  = (16*IMG_FACTOR);
+    size_t IMG_HEIGHT = (9*IMG_FACTOR);
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(IMG_WIDTH, IMG_HEIGHT, "gym");
@@ -198,9 +172,13 @@ int main(int argc, char **argv)
 
     Cost_Plot plot = {0};
 
+    Image preview_image = GenImageColor(img_width, img_height, BLACK);
+    Texture2D preview_texture = LoadTextureFromImage(preview_image);
+
     size_t epoch = 0;
-    size_t max_epoch = 5000;
+    size_t max_epoch = 100*1000;
     size_t epochs_per_frame = 103;
+    float rate = 1.0f;
     bool paused = true;
     while(!WindowShouldClose()){
         if(IsKeyPressed(KEY_SPACE)) {
@@ -223,19 +201,34 @@ int main(int argc, char **argv)
         Color background_color = {0x18, 0x18, 0x18, 0xFF};
         ClearBackground(background_color);
         {
-            int rw, rh, rx, ry;
             int w = GetRenderWidth();
             int h = GetRenderHeight();
 
-            rw = w/2;
-            rh = h*2/3;
-            rx = 0;
-            ry = h/2 - rh/2;
+            int rw = w/3;
+            int rh = h*2/3;
+            int rx = 0;
+            int ry = h/2 - rh/2;
 
             plot_cost(plot, rx, ry, rw, rh);
-
             rx += rw;
             nn_render_raylib(nn, rx, ry, rw, rh);
+            rx += rw;
+
+            float scale = 15;
+
+            for(size_t y = 0; y < img_height; ++y) {
+                for(size_t x = 0; x < img_width; ++x){
+                    MAT_AT(NN_INPUT(nn), 0, 0) = (float)x/(img_width - 1);
+                    MAT_AT(NN_INPUT(nn), 0, 1) = (float)y/(img_height - 1);
+                    nn_forward(nn);
+                    uint8_t pixel = MAT_AT(NN_OUTPUT(nn), 0, 0)*255.f;
+                    ImageDrawPixel(&preview_image, x, y, CLITERAL(Color) {pixel, pixel, pixel, 255});
+                }
+            printf("\n");
+            }
+
+            UpdateTexture(preview_texture, preview_image.data);
+            DrawTextureEx(preview_texture, CLITERAL(Vector2) {rx, ry + img_height*scale}, 0, scale, WHITE);
 
             const buffer[256];
             snprintf(buffer, sizeof(buffer), "Epoch : %zu/%zu, Rate: %f, Cost: %f", epoch, max_epoch, rate, nn_cost(nn, ti, to));
@@ -243,6 +236,61 @@ int main(int argc, char **argv)
         }
         EndDrawing();
     }
-    getchar(); 
+
+    for(size_t y = 0; y < img_height; ++y) {
+        for(size_t x = 0; x < img_width; ++x){
+            uint8_t pixel = img_pixels[y*img_width + x];
+            if(pixel)
+                printf("%3u", pixel);
+            else
+                printf("  ");
+        }
+        printf("\n");
+    }
+
+    printf("\n");
+    printf("-------------------------------\n");
+    printf("\n");
+
+    for(size_t y = 0; y < img_height; ++y) {
+        for(size_t x = 0; x < img_width; ++x){
+            MAT_AT(NN_INPUT(nn), 0, 0) = (float)x/(img_width - 1);
+            MAT_AT(NN_INPUT(nn), 0, 1) = (float)y/(img_height - 1);
+            nn_forward(nn);
+            uint8_t pixel = MAT_AT(NN_OUTPUT(nn), 0, 0)*255.f;
+            if(pixel)
+                printf("%3u", pixel);
+            else
+                printf("  ");
+        }
+        printf("\n");
+    }
+
+    size_t out_width = 512;
+    size_t out_height = 512;
+    uint8_t *out_pixels = malloc(sizeof(*out_pixels)*out_width*out_height);
+    assert(out_pixels != NULL);
+
+
+    for(size_t y = 0; y < out_height; ++y) {
+    for(size_t x = 0; x < out_width; ++x) {
+        MAT_AT(NN_INPUT(nn), 0, 0) = (float)x/(out_width - 1);
+        MAT_AT(NN_INPUT(nn), 0, 1) = (float)y/(out_height - 1);
+        nn_forward(nn);
+        uint8_t pixel = MAT_AT(NN_OUTPUT(nn), 0, 0)*255.f;
+        out_pixels[y*out_width + x] = pixel;
+    }
+   }
+
+   const char * out_file_path = "upscaled.png";
+
+   if (!stbi_write_png(out_file_path, out_width, out_height, 1, out_pixels, out_width*sizeof(*out_pixels))) {
+    fprintf(stderr, "ERROR: could not save image %s\n", out_file_path);
+    return 1;
+   }
+
+   printf("Generated %s from %s\n", out_file_path, img_file_path);
+   getchar();
+
     return 0;
 }

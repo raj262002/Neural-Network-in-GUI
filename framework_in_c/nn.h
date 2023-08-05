@@ -114,13 +114,20 @@ void mat_save(FILE *out, Mat m)
     fwrite(magic, strlen(magic), 1, out);
     fwrite(&m.rows, sizeof(m.rows), 1, out);
     fwrite(&m.cols, sizeof(m.cols), 1, out);
+    // printf("before for loop \n");
     for(size_t i = 0; i < m.rows; ++i){
         size_t n = fwrite(&MAT_AT(m, i, 0), sizeof(*m.es), m.cols, out);
-        while(n < m.rows*m.cols && !ferror(out)) {
+        // printf("before while loop \n");
+        // printf("%d \n", n);
+        // printf("%d \n", m.rows*m.cols);
+        while(n < m.cols && !ferror(out)) {
             size_t k = fwrite(m.es + n, sizeof(*m.es), m.cols - n, out);
             n += k;
+            // printf("%d \n", n);
         }
+        // printf("after while loop \n");
     }
+    // printf("after for loop \n");
 }
 
 Mat mat_load(FILE *in) 
