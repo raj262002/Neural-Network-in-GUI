@@ -54,6 +54,8 @@ void mat_sum(Mat dst, Mat a);
 
 void mat_print(Mat m, const char *name, size_t padding);
 
+void mat_shuffle_rows(Mat m);
+
 #define MAT_PRINT(m) mat_print(m, #m, 0)
 
 typedef struct {
