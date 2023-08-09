@@ -194,8 +194,8 @@ int main(int argc, char **argv)
 
     size_t epoch = 0;
     size_t max_epoch = 100*1000;
-    size_t batches_per_frame = 10;
-    size_t batch_size = 200;
+    size_t batches_per_frame = 100;
+    size_t batch_size = 28;
     size_t batch_begin = 0;
     size_t batch_count = (t.rows + batch_size - 1)/batch_size;
     float average_cost = 0;
@@ -262,7 +262,7 @@ int main(int argc, char **argv)
             nn_render_raylib(nn, rx, ry, rw, rh);
             rx += rw;
 
-            float scale = 15;
+            float scale = 10;
 
             for(size_t y = 0; y < img_height; ++y) {
                 for(size_t x = 0; x < img_width; ++x){
@@ -279,7 +279,7 @@ int main(int argc, char **argv)
             DrawTextureEx(preview_texture, CLITERAL(Vector2) {rx, ry + img_height*scale}, 0, scale, WHITE);
 
             const char buffer[256];
-            snprintf(buffer, sizeof(buffer), "Epoch : %zu/%zu, Rate: %f", epoch, max_epoch, rate);
+            snprintf(buffer, sizeof(buffer), "Epoch : %zu/%zu, Rate: %f, Cost: %f", epoch, max_epoch, rate, plot.count > 0 ? plot.items[plot.count - 1] : 0);
             DrawText(buffer, 0, 0, h*0.04, WHITE);
         }
         EndDrawing();
